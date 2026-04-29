@@ -1,0 +1,52 @@
+# Secrets (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+*.manifest
+*.spec
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checkers / linters (local)
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Flask / local data
+instance/
+*.db
+
+# Uploaded files (default STORAGE_PATH)
+storage/uploads/*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
