@@ -1,0 +1,6 @@
+# Railway: set service "Root Directory" to `backend`, then set
+# Settings → Config as Code → path to this file: `/backend/railway.toml`
+# (Config path does not follow Root Directory — see Railway monorepo docs.)
+
+[deploy]
+startCommand = "python app.py"

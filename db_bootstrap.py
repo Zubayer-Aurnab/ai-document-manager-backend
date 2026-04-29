@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import os
 import re
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,6 +13,53 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MYSQL_UNKNOWN_DATABASE = 1049
+MYSQL_ACCESS_DENIED = 1045
+
+
+def _mysql_errno_from_exception(exc: BaseException, errno: int) -> bool:
+    """True if this exception chain includes the given MySQL errno (PyMySQL / SQLAlchemy)."""
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    for _ in range(8):
+        if cur is None or id(cur) in seen:
+            break
+        seen.add(id(cur))
+        args = getattr(cur, "args", ())
+        if len(args) >= 1 and args[0] == errno:
+            return True
+        cur = getattr(cur, "orig", None) or getattr(cur, "__cause__", None)
+    return False
+
+
+def _running_on_railway() -> bool:
+    return bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+
+
+def _mysql_access_denied_help_text() -> str:
+    if _running_on_railway():
+        return (
+            "MySQL refused login (error 1045: access denied). This is running on Railway, so DATABASE_URL on "
+            "your **API service** does not match the credentials the **MySQL** service expects (wrong password, "
+            "stale copy, or not wired to the right database).\n\n"
+            "Fix:\n"
+            "  1. In Railway, open your **MySQL** plugin → Variables — note the canonical URL variable name.\n"
+            "  2. Open your **Flask/API** service → Variables: either reference **MYSQL_URL** from the MySQL "
+            "service (Railway’s canonical URL), or reference DATABASE_URL if your template exposes it — "
+            "do not paste an old URL from your laptop.\n"
+            "  3. If both DATABASE_URL and MYSQL_URL exist, DATABASE_URL wins; remove a wrong DATABASE_URL "
+            "so the app can use MYSQL_URL, or fix DATABASE_URL to match the MySQL service.\n"
+            "  4. Redeploy the API after saving.\n\n"
+            "If you must paste a raw URL and the password contains @ : / ? # % or spaces, URL-encode those "
+            "characters in the user:password segment."
+        )
+    return (
+        "MySQL refused login (error 1045: access denied). Usually the password in the URL is wrong or "
+        "broken by special characters (e.g. @ in the password must be written as %40 in the user:password part).\n\n"
+        "For Railway from your PC: copy **MYSQL_PUBLIC_URL** (or DATABASE_PUBLIC_URL) from the MySQL service → "
+        "Variables into backend/.env as DATABASE_URL=... or MYSQL_PUBLIC_URL=... (either key works; "
+        "DATABASE_URL wins if both are set). No quotes. TLS for *.rlwy.net is enabled automatically; "
+        "set MYSQL_SSL=1 to force TLS on other hosts, MYSQL_SSL=0 to turn off."
+    )
 
 
 def _mysql_unknown_database_message(exc: BaseException) -> str | None:
@@ -120,7 +168,13 @@ def bootstrap_database(app: Flask) -> None:
             try:
                 _ensure_mysql_database(uri)
             except Exception as e:
-                logger.warning("Auto-create MySQL database failed: %s", e)
+                if _mysql_errno_from_exception(e, MYSQL_ACCESS_DENIED):
+                    logger.warning(
+                        "Auto-create MySQL database skipped: access denied (1045). "
+                        "Fix DATABASE_URL — migrations will fail until auth succeeds."
+                    )
+                else:
+                    logger.warning("Auto-create MySQL database failed: %s", e)
 
         try:
             upgrade()
@@ -138,6 +192,10 @@ def bootstrap_database(app: Flask) -> None:
                     "or enable AUTO_CREATE_MYSQL_DATABASE=true (default) and use a user with CREATE privilege.\n"
                     f"Server message: {hint}"
                 ) from e
+            if _mysql_errno_from_exception(e, MYSQL_ACCESS_DENIED):
+                msg = _mysql_access_denied_help_text()
+                logger.critical("%s", msg)
+                raise RuntimeError(msg) from e
             raise
         email = app.config.get("DEFAULT_ADMIN_EMAIL", Config.DEFAULT_ADMIN_EMAIL)
         password = app.config.get("DEFAULT_ADMIN_PASSWORD", Config.DEFAULT_ADMIN_PASSWORD)

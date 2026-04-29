@@ -1,0 +1,17 @@
+# Used when Railway "Root Directory" is `backend` (build context = this folder).
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+.env.*
+instance/
+*.db
+storage/uploads/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.git
