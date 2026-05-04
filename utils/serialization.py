@@ -84,6 +84,8 @@ def document_dict(
     d: Document,
     permission: str | None = None,
     owner: dict | None = None,
+    *,
+    share_list_summary: dict | None = None,
 ) -> dict:
     out = {
         "id": d.id,
@@ -107,11 +109,13 @@ def document_dict(
         out["permission"] = permission
     if owner is not None:
         out["owner"] = owner
+    if share_list_summary is not None:
+        out["share_list_summary"] = share_list_summary
     return out
 
 
 def share_dict(s: DocumentShare) -> dict:
-    return {
+    out = {
         "id": s.id,
         "document_id": s.document_id,
         "shared_with_user_id": s.shared_with_user_id,
@@ -121,6 +125,14 @@ def share_dict(s: DocumentShare) -> dict:
         "created_by_id": s.created_by_id,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
+    u = getattr(s, "shared_with_user", None)
+    if u is not None:
+        out["shared_with_user_name"] = u.full_name
+        out["shared_with_user_email"] = u.email
+    dep = getattr(s, "shared_with_department", None)
+    if dep is not None:
+        out["shared_with_department_name"] = dep.name
+    return out
 
 
 def notification_dict(n: Notification) -> dict:

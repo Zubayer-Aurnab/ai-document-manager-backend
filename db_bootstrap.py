@@ -55,10 +55,12 @@ def _mysql_access_denied_help_text() -> str:
     return (
         "MySQL refused login (error 1045: access denied). Usually the password in the URL is wrong or "
         "broken by special characters (e.g. @ in the password must be written as %40 in the user:password part).\n\n"
-        "For Railway from your PC: copy **MYSQL_PUBLIC_URL** (or DATABASE_PUBLIC_URL) from the MySQL service → "
-        "Variables into backend/.env as DATABASE_URL=... or MYSQL_PUBLIC_URL=... (either key works; "
-        "DATABASE_URL wins if both are set). No quotes. TLS for *.rlwy.net is enabled automatically; "
-        "set MYSQL_SSL=1 to force TLS on other hosts, MYSQL_SSL=0 to turn off."
+        "Check backend/.env: only **one** active DATABASE_URL= line (if you have two, python-dotenv uses the "
+        "**last** line only).\n\n"
+        "For Railway from your PC: copy **MYSQL_PUBLIC_URL** (or DATABASE_PUBLIC_URL) from the **MySQL** "
+        "service → Variables (not an old hand-built URL). The username in that URL must match **MYSQLUSER** "
+        "(it is not always `root`). DATABASE_URL wins over MYSQL_PUBLIC_URL if both are set. No quotes. "
+        "TLS for *.rlwy.net is enabled automatically; set MYSQL_SSL=1 to force TLS on other hosts, MYSQL_SSL=0 to turn off."
     )
 
 
@@ -97,8 +99,14 @@ def _ensure_mysql_database(uri: str) -> None:
             "DATABASE_URL database segment must be 1-64 characters, letters, digits, or underscore only."
         )
 
+    from config import mysql_ssl_connect_args_for_uri
+
     server_url = url.set(database="mysql")
-    engine = create_engine(server_url, isolation_level="AUTOCOMMIT")
+    eng_kw: dict = {"isolation_level": "AUTOCOMMIT"}
+    ssl_args = mysql_ssl_connect_args_for_uri(uri)
+    if ssl_args:
+        eng_kw["connect_args"] = ssl_args
+    engine = create_engine(server_url, **eng_kw)
     try:
         with engine.connect() as conn:
             conn.execute(

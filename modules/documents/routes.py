@@ -9,12 +9,14 @@ from schemas.document_schema import DocumentShareSchema, DocumentUpdateSchema, D
 from services.ai_service import AIService
 from services.activity_log_service import ActivityLogService
 from services.document_permission_service import DocumentPermissionService
+from repositories.document_share_repository import DocumentShareRepository
 from services.document_service import DocumentService
 from utils.pagination import pagination_meta
 from utils.responses import error, success
 from utils.serialization import activity_dict, document_dict, owner_summary_dict, share_dict
 
 _docs = DocumentService()
+_share_repo = DocumentShareRepository()
 _perm = DocumentPermissionService()
 _ai = AIService()
 _logs = ActivityLogService()
@@ -50,7 +52,8 @@ def _list_filters():
         return v.strip() if v and str(v).strip() else None
 
     oid = request.args.get("owner_id", type=int)
-    return {
+    dept = request.args.get("department_id", type=int)
+    out = {
         "search": s("q") or s("search"),
         "extension": s("extension"),
         "category_slug": s("category_slug"),
@@ -59,6 +62,9 @@ def _list_filters():
         "created_from": s("created_from"),
         "created_to": s("created_to"),
     }
+    if dept is not None:
+        out["department_id"] = dept
+    return out
 
 
 @documents_bp.get("")
@@ -84,11 +90,20 @@ def list_documents():
     else:
         return error("Invalid scope.", status_code=400)
 
+    share_summaries: dict[int, dict] = {}
+    if scope == "my" and paginated.items:
+        share_summaries = _share_repo.active_share_summary_by_document_ids([d.id for d in paginated.items])
+
     items = []
     for d in paginated.items:
         perm = _perm.effective_permission(current_user, d)
         owner = owner_summary_dict(getattr(d, "owner", None))
-        items.append(document_dict(d, permission=perm, owner=owner))
+        extra: dict = {}
+        if scope == "my":
+            extra["share_list_summary"] = share_summaries.get(
+                d.id, {"user_count": 0, "departments": []}
+            )
+        items.append(document_dict(d, permission=perm, owner=owner, **extra))
     return success(
         data={
             "items": items,
@@ -296,6 +311,25 @@ def ai_keywords(doc_id: int):
             "document": document_dict(doc, permission=perm, owner=owner_summary_dict(getattr(doc, "owner", None))),
         },
     )
+
+
+@documents_bp.post("/<int:doc_id>/ai/chat")
+@jwt_required()
+def ai_document_chat(doc_id: int):
+    doc = _docs.get_document(doc_id)
+    if not doc:
+        return error("Not found.", status_code=404)
+    if not _perm.require_at_least(current_user, doc, "view"):
+        return error("Forbidden.", status_code=403)
+    payload = request.get_json(silent=True) or {}
+    message = payload.get("message", "")
+    history = payload.get("history")
+    if history is not None and not isinstance(history, list):
+        return error("Invalid history.", status_code=422)
+    reply, err = _ai.chat_about_document(doc, str(message), history if isinstance(history, list) else None)
+    if err:
+        return error(err, status_code=400)
+    return success("OK.", {"reply": reply})
 
 
 @documents_bp.get("/<int:doc_id>/activity-logs")

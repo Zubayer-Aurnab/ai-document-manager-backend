@@ -15,6 +15,7 @@ from services.activity_log_service import ActivityLogService
 from services.document_permission_service import DocumentPermissionService
 from services.notification_service import NotificationService
 from services.storage_service import StorageService
+from services.ai_service import AIService
 from services.text_extraction_service import TextExtractionService
 from utils.file_security import safe_stored_name
 from repositories.document_category_repository import DocumentCategoryRepository
@@ -39,11 +40,67 @@ def _normalize_tags(raw: list[str] | None) -> list[str] | None:
     return out[:25] or None
 
 
+def _merge_user_and_ai_tags(user: list[str] | None, auto: list[str]) -> list[str] | None:
+    """User tags first, then AI tags; dedupe case-insensitively; cap 25."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in user or []:
+        s = str(t).strip()[:40]
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+        if len(out) >= 25:
+            return out
+    for t in auto or []:
+        s = str(t).strip()[:40]
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+        if len(out) >= 25:
+            break
+    return out or None
+
+
 _VALID_SHARE_PERMS = {
     SharePermission.VIEW.value,
     SharePermission.COMMENT.value,
     SharePermission.EDIT.value,
 }
+
+_TEXT_UPLOAD_EXTENSIONS = frozenset({"txt", "md", "log", "json", "tsv"})
+
+
+def _upload_mime_allowed(mime: str, ext: str) -> bool:
+    """Extension is already restricted by ``safe_stored_name``; relax MIME for text and images."""
+    m = (mime or "application/octet-stream").lower().strip()
+    allowed_mimes: frozenset[str] = current_app.config["ALLOWED_MIME_TYPES"]
+    if m in allowed_mimes:
+        return True
+    if m.startswith("image/"):
+        return True
+    if ext in _TEXT_UPLOAD_EXTENSIONS:
+        if m.startswith("text/"):
+            return True
+        if ext == "json" and m in ("application/json", "text/json"):
+            return True
+        if ext == "tsv" and m in (
+            "text/tab-separated-values",
+            "text/csv",
+            "text/plain",
+            "application/octet-stream",
+        ):
+            return True
+        if ext in ("txt", "md", "log") and m in ("application/octet-stream", "binary/octet-stream"):
+            return True
+    return False
 
 
 class DocumentService:
@@ -57,6 +114,7 @@ class DocumentService:
         perm: DocumentPermissionService | None = None,
         logs: ActivityLogService | None = None,
         notifications: NotificationService | None = None,
+        ai: AIService | None = None,
     ):
         self._docs = docs or DocumentRepository()
         self._shares = shares or DocumentShareRepository()
@@ -66,6 +124,7 @@ class DocumentService:
         self._perm = perm or DocumentPermissionService()
         self._logs = logs or ActivityLogService()
         self._notifications = notifications or NotificationService()
+        self._ai = ai or AIService()
 
     def upload(
         self,
@@ -86,8 +145,7 @@ class DocumentService:
             return None, str(e)
 
         mime = file.mimetype or "application/octet-stream"
-        allowed_mimes = current_app.config["ALLOWED_MIME_TYPES"]
-        if mime not in allowed_mimes and not mime.startswith("image/"):
+        if not _upload_mime_allowed(mime, ext):
             return None, "Unsupported MIME type"
 
         raw = file.read()
@@ -112,7 +170,7 @@ class DocumentService:
             department_id=actor.department_id,
             title=title.strip() or file.filename,
             description=desc,
-            tags=tag_list,
+            tags=None,
             original_filename=file.filename,
             stored_filename=stored_name,
             mime_type=mime,
@@ -123,6 +181,11 @@ class DocumentService:
         )
         path = self._storage.absolute_path(stored_name)
         document.extracted_text = self._text.extract(path, ext, mime)[:1_000_000]
+        auto_tags = self._ai.extract_auto_tags(
+            document.extracted_text or "",
+            title=document.title.strip() or None,
+        )
+        document.tags = _merge_user_and_ai_tags(tag_list, auto_tags)
         self._docs.create(document)
         self._logs.record(actor.id, "document.uploaded", "document", document.id, {"title": document.title})
         return document, None

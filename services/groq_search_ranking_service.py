@@ -46,6 +46,7 @@ def _compact_doc(c: dict[str, Any]) -> dict[str, Any]:
         "category_slug",
         "size_bytes",
         "ai_summary",
+        "tags",
         "excerpt",
     ):
         if key not in c:
@@ -53,7 +54,16 @@ def _compact_doc(c: dict[str, Any]) -> dict[str, Any]:
         v = c.get(key)
         if v is None or v == "":
             continue
-        if key in ("title", "original_filename", "extension", "mime_type", "category_slug", "ai_summary", "excerpt"):
+        if key in (
+            "title",
+            "original_filename",
+            "extension",
+            "mime_type",
+            "category_slug",
+            "ai_summary",
+            "tags",
+            "excerpt",
+        ):
             out[key] = str(v)[:800] if key == "excerpt" else str(v)[:400]
         elif key == "size_bytes":
             try:
@@ -84,7 +94,8 @@ class GroqSearchRankingService:
             f"User question (natural language): {user_query.strip()[:800]}\n\n"
             "You are given a JSON array of documents the user is already allowed to access. "
             "Each object has at least: id, and may include title, original_filename, extension, mime_type, "
-            "size_bytes (file size in bytes), category_slug, ai_summary, excerpt (from document text).\n\n"
+            "size_bytes (file size in bytes), category_slug, ai_summary, tags (comma-separated labels), "
+            "excerpt (from document text).\n\n"
             "Documents JSON:\n"
             f"{json.dumps(payload_docs, ensure_ascii=False)}\n\n"
             "Interpret the user's intent (e.g. 'largest image' → pick image-like mime/extension and largest size_bytes; "

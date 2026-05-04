@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import String, and_, cast, or_
 from sqlalchemy.orm import joinedload
 
 from extensions import db
@@ -51,6 +51,7 @@ class DocumentRepository:
     def create(self, document: Document) -> Document:
         db.session.add(document)
         db.session.commit()
+        db.session.refresh(document)
         return document
 
     def save(self, document: Document) -> Document:
@@ -67,15 +68,18 @@ class DocumentRepository:
         category_slug: str | None = None,
         visibility: str | None = None,
         owner_id: int | None = None,
+        department_id: int | None = None,
         created_from: str | None = None,
         created_to: str | None = None,
     ):
         if search and str(search).strip():
             like = f"%{str(search).strip()}%"
+            tags_match = and_(Document.tags.isnot(None), cast(Document.tags, String).ilike(like))
             q = q.filter(
                 or_(
                     Document.title.ilike(like),
                     Document.original_filename.ilike(like),
+                    tags_match,
                 )
             )
         if extension and str(extension).strip():
@@ -91,6 +95,8 @@ class DocumentRepository:
             q = q.filter(Document.visibility == visibility)
         if owner_id is not None:
             q = q.filter(Document.owner_id == owner_id)
+        if department_id is not None and department_id > 0:
+            q = q.filter(Document.department_id == department_id)
         start = _parse_date_start(created_from)
         if start is not None:
             q = q.filter(Document.created_at >= start)
@@ -197,10 +203,12 @@ class DocumentRepository:
         from sqlalchemy import and_, exists, select
 
         like = f"%{query_text}%"
+        tags_match = and_(Document.tags.isnot(None), cast(Document.tags, String).ilike(like))
         text_match = or_(
             Document.title.ilike(like),
             Document.original_filename.ilike(like),
             Document.extracted_text.ilike(like),
+            tags_match,
         )
         base_deleted = Document.deleted_at.is_(None)
 

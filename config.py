@@ -9,6 +9,32 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
 
+def _warn_if_env_file_defines_database_url_more_than_once() -> None:
+    """python-dotenv keeps the *last* DATABASE_URL= line; earlier duplicates are silently ignored."""
+    path = BASE_DIR / ".env"
+    if not path.is_file():
+        return
+    n = 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.split("=", 1)[0].strip() == "DATABASE_URL":
+            n += 1
+    if n > 1:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "%s contains DATABASE_URL=%d times; only the **last** value is used. Comment out the line you "
+            "do not need (e.g. local vs Railway).",
+            path.name,
+            n,
+        )
+
+
+_warn_if_env_file_defines_database_url_more_than_once()
+
+
 def normalize_sqlite_database_uri(uri: str) -> str:
     """
     Resolve relative SQLite paths against BASE_DIR (this package root), not the process cwd.
@@ -112,7 +138,7 @@ def resolve_database_url_from_env() -> str | None:
     return _mysql_url_from_discrete_railway_vars()
 
 
-def _mysql_ssl_connect_args(db_uri: str) -> dict:
+def mysql_ssl_connect_args_for_uri(db_uri: str) -> dict:
     """
     Railway’s public MySQL TCP proxy (hostnames under *.rlwy.net) expects TLS. PyMySQL may not
     negotiate that unless ``ssl`` is passed — some setups surface that as 1045 instead of a TLS error.
@@ -174,7 +200,7 @@ class Config:
     _mysql_family = _db_url.startswith(("mysql", "mariadb"))
     if _mysql_family:
         _mysql_opts: dict = {"pool_pre_ping": True, "pool_recycle": 280}
-        _ssl = _mysql_ssl_connect_args(_db_url)
+        _ssl = mysql_ssl_connect_args_for_uri(_db_url)
         if _ssl:
             _mysql_opts["connect_args"] = _ssl
         SQLALCHEMY_ENGINE_OPTIONS = _mysql_opts
@@ -203,9 +229,16 @@ class Config:
             "xls",
             "xlsx",
             "csv",
+            "tsv",
+            "txt",
+            "md",
+            "log",
+            "json",
             "jpg",
             "jpeg",
             "png",
+            "gif",
+            "webp",
         }
     )
     ALLOWED_MIME_PREFIXES = ("image/", "application/pdf", "text/csv")
@@ -217,8 +250,14 @@ class Config:
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "text/csv",
+            "text/plain",
+            "text/markdown",
+            "text/tab-separated-values",
+            "application/json",
             "image/jpeg",
             "image/png",
+            "image/gif",
+            "image/webp",
         }
     )
 
@@ -227,3 +266,4 @@ class Config:
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
     GROQ_AI_SEARCH_CANDIDATE_LIMIT = int(os.environ.get("GROQ_AI_SEARCH_CANDIDATE_LIMIT", "40"))
     GROQ_TIMEOUT_SEC = int(os.environ.get("GROQ_TIMEOUT_SEC", "45"))
+    AI_AUTO_TAG_MAX = int(os.environ.get("AI_AUTO_TAG_MAX", "12"))

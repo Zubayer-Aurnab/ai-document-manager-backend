@@ -11,10 +11,15 @@ class TextExtractionService:
             if ext == "docx":
                 return self._docx(file_path)
             if ext in ("xlsx", "xls"):
-                return self._excel(file_path)
+                try:
+                    return self._excel(file_path)
+                except Exception:
+                    return ""
             if ext == "csv" or mime_type == "text/csv":
                 return file_path.read_text(errors="ignore")[:200_000]
-            if ext in ("txt",) or mime_type.startswith("text/"):
+            if ext == "tsv" or mime_type == "text/tab-separated-values":
+                return file_path.read_text(errors="ignore")[:200_000]
+            if ext in ("txt", "md", "log", "json") or mime_type.startswith("text/"):
                 return file_path.read_text(errors="ignore")[:200_000]
         except OSError:
             return ""
