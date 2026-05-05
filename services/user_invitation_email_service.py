@@ -42,6 +42,39 @@ class UserInvitationEmailService:
             html_content=body.strip(),
         )
 
+    def send_account_credentials_email(self, *, to_email: str, full_name: str, plaintext_password: str) -> bool:
+        """Sent when an admin creates a user — no verification step; includes sign-in email and password."""
+        safe_name = html.escape(full_name)
+        safe_email = html.escape(to_email)
+        safe_pw = html.escape(plaintext_password)
+        base = current_app.config["FRONTEND_URL"].rstrip("/")
+        signin_url = f"{base}/signin"
+        subject = "Your Document Manager sign-in details"
+        body = f"""
+<!DOCTYPE html>
+<html><body style="font-family:system-ui,sans-serif;line-height:1.5;color:#111;">
+  <p>Hi {safe_name},</p>
+  <p>An administrator created your Document Manager account. Sign in with:</p>
+  <table style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="padding:6px 12px;background:#f4f4f5;"><strong>Email</strong></td>
+        <td style="padding:6px 12px;">{safe_email}</td></tr>
+    <tr><td style="padding:6px 12px;background:#f4f4f5;"><strong>Password</strong></td>
+        <td style="padding:6px 12px;font-family:monospace;">{safe_pw}</td></tr>
+  </table>
+  <p style="margin:24px 0;">
+    <a href="{html.escape(signin_url)}" style="background:#059669;color:#fff;padding:12px 22px;border-radius:8px;
+      text-decoration:none;display:inline-block;font-weight:600;">Sign in</a>
+  </p>
+  <p style="font-size:13px;color:#555;">Change your password after first login if your organization requires it.</p>
+</body></html>
+"""
+        return self._mailer.send_html(
+            to_email=to_email,
+            to_name=full_name,
+            subject=subject,
+            html_content=body.strip(),
+        )
+
     def send_welcome_email(self, *, to_email: str, full_name: str, plaintext_password: str) -> bool:
         safe_name = html.escape(full_name)
         safe_email = html.escape(to_email)

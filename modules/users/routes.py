@@ -54,7 +54,7 @@ def create_user():
     if email_warning:
         payload["email_warning"] = email_warning
     return success(
-        "User created. A verification email was sent (or queued) to their address.",
+        "User created. Sign-in details were emailed when Brevo is configured.",
         payload,
         status_code=201,
     )

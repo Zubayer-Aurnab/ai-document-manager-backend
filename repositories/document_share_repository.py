@@ -87,3 +87,17 @@ class DocumentShareRepository:
     def delete(self, share: DocumentShare) -> None:
         db.session.delete(share)
         db.session.commit()
+
+    def save(self, share: DocumentShare) -> DocumentShare:
+        db.session.add(share)
+        db.session.commit()
+        db.session.refresh(share)
+        loaded = (
+            DocumentShare.query.options(
+                joinedload(DocumentShare.shared_with_user),
+                joinedload(DocumentShare.shared_with_department),
+            )
+            .filter_by(id=share.id)
+            .one_or_none()
+        )
+        return loaded or share

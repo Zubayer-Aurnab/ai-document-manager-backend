@@ -291,6 +291,8 @@ class DocumentService:
             return None, "Specify exactly one of user or department"
         if permission not in _VALID_SHARE_PERMS:
             return None, "Invalid permission"
+        if shared_with_user_id is not None and shared_with_user_id == doc.owner_id:
+            return None, "Cannot share with the document owner"
         sh = DocumentShare(
             document_id=doc.id,
             shared_with_user_id=shared_with_user_id,
@@ -339,11 +341,37 @@ class DocumentService:
         self._logs.record(actor.id, "document.share_revoked", "document", doc.id, {"share_id": share_id})
         return None
 
+    def update_share(
+        self,
+        actor: User,
+        doc_id: int,
+        share_id: int,
+        data: dict[str, Any],
+    ) -> tuple[Optional[DocumentShare], Optional[str]]:
+        doc = self.get_document(doc_id)
+        if not doc:
+            return None, "Not found"
+        if not self._perm.require_at_least(actor, doc, SharePermission.EDIT.value):
+            return None, "Forbidden"
+        sh = self._shares.get_by_id(share_id)
+        if not sh or sh.document_id != doc.id:
+            return None, "Not found"
+        if "permission" in data and data["permission"] is not None:
+            perm = data["permission"]
+            if perm not in _VALID_SHARE_PERMS:
+                return None, "Invalid permission"
+            sh.permission = perm
+        if "expires_at" in data:
+            sh.expires_at = data["expires_at"]
+        self._shares.save(sh)
+        self._logs.record(actor.id, "document.share_updated", "document", doc.id, {"share_id": sh.id})
+        return sh, None
+
     def list_shares(self, actor: User, doc_id: int) -> tuple[list[DocumentShare], Optional[str]]:
         doc = self.get_document(doc_id)
         if not doc:
             return [], "Not found"
-        if not self._perm.require_at_least(actor, doc, SharePermission.VIEW.value):
+        if not self._perm.require_at_least(actor, doc, SharePermission.EDIT.value):
             return [], "Forbidden"
         return self._shares.list_for_document(doc_id), None
 

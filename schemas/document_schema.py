@@ -1,6 +1,6 @@
 import re
 
-from marshmallow import Schema, fields, validate
+from marshmallow import Schema, ValidationError, fields, validate, validates_schema
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9-]{0,40}$")
@@ -45,3 +45,15 @@ class DocumentShareSchema(Schema):
         validate=validate.OneOf(["view", "comment", "edit"]),
     )
     expires_at = fields.DateTime(required=False, allow_none=True)
+
+
+class DocumentShareUpdateSchema(Schema):
+    """PATCH body: change permission and/or expiry (``expires_at: null`` clears expiry)."""
+
+    permission = fields.Str(required=False, validate=validate.OneOf(["view", "comment", "edit"]))
+    expires_at = fields.DateTime(required=False, allow_none=True)
+
+    @validates_schema
+    def require_at_least_one_field(self, data, **kwargs):
+        if not data:
+            raise ValidationError("Submit at least one of: permission, expires_at.")

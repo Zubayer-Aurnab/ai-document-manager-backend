@@ -1,4 +1,5 @@
 """User administration and profile updates."""
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from models.user import User, UserRole
@@ -37,7 +38,7 @@ class UserService:
     ) -> tuple[Optional[User], Optional[str], Optional[str]]:
         """
         Returns (user, error, email_warning).
-        `email_warning` is set when the user was created but the verification email could not be sent.
+        `email_warning` is set when the user was created but the credentials email could not be sent.
         """
         if actor.role != UserRole.ADMIN.value:
             return None, "Forbidden", None
@@ -49,16 +50,24 @@ class UserService:
             role=data.get("role", UserRole.USER.value),
             department_id=data.get("department_id"),
             is_active=True,
-            email_verified_at=None,
+            email_verified_at=datetime.now(timezone.utc),
         )
         user.set_password(data["password"])
         self._repo.create(user)
         self._logs.record(actor.id, "user.created", "user", user.id, {"email": user.email})
-        from services.user_email_verification_service import UserEmailVerificationService
+        from services.user_invitation_email_service import UserInvitationEmailService
 
-        email_warning = UserEmailVerificationService().start_for_new_user(
-            user, data["password"], actor.id
+        mail_ok = UserInvitationEmailService().send_account_credentials_email(
+            to_email=user.email,
+            full_name=user.full_name,
+            plaintext_password=data["password"],
         )
+        email_warning = None
+        if not mail_ok:
+            email_warning = (
+                "User was created but the sign-in details email could not be sent. "
+                "Configure Brevo (BREVO_API_KEY / BREVO_SENDER_EMAIL) or share credentials manually."
+            )
         return user, None, email_warning
 
     def update_user(self, actor: User, user_id: int, data: dict[str, Any]) -> tuple[Optional[User], Optional[str]]:

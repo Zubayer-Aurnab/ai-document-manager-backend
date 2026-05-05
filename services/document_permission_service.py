@@ -10,12 +10,20 @@ from models.user import User, UserRole
 _ORDER = {SharePermission.VIEW.value: 1, SharePermission.COMMENT.value: 2, SharePermission.EDIT.value: 3}
 
 
+def _as_utc_aware(dt: datetime) -> datetime:
+    """SQLAlchemy/SQLite may load naive datetimes; comparisons must use consistent tz-aware UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _share_is_active(sh: DocumentShare) -> bool:
     exp = getattr(sh, "expires_at", None)
     if exp is None:
         return True
     now = datetime.now(timezone.utc)
-    return now <= exp
+    exp_utc = _as_utc_aware(exp)
+    return now <= exp_utc
 
 
 def _max_perm(a: Optional[str], b: Optional[str]) -> Optional[str]:

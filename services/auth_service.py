@@ -17,16 +17,7 @@ class AuthService:
             return None
         if not user.check_password(password):
             return None
-        if user.email_verified_at is None:
-            return None
         return user
-
-    def login_unverified_only(self, email: str, password: str) -> bool:
-        """True when credentials are valid but email is not verified yet (for login error messaging)."""
-        user = self._users.get_by_email(email.strip().lower())
-        return bool(
-            user and user.is_active and user.check_password(password) and user.email_verified_at is None
-        )
 
     def build_tokens(self, user: User) -> dict[str, str]:
         identity = str(user.id)

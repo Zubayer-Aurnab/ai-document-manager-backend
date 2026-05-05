@@ -5,7 +5,12 @@ from flask_jwt_extended import current_user, jwt_required
 from marshmallow import ValidationError
 
 from modules.documents import documents_bp
-from schemas.document_schema import DocumentShareSchema, DocumentUpdateSchema, DocumentUploadSchema
+from schemas.document_schema import (
+    DocumentShareSchema,
+    DocumentShareUpdateSchema,
+    DocumentUpdateSchema,
+    DocumentUploadSchema,
+)
 from services.ai_service import AIService
 from services.activity_log_service import ActivityLogService
 from services.document_permission_service import DocumentPermissionService
@@ -22,6 +27,7 @@ _ai = AIService()
 _logs = ActivityLogService()
 _upload_schema = DocumentUploadSchema()
 _share_schema = DocumentShareSchema()
+_share_update_schema = DocumentShareUpdateSchema(partial=True)
 _update_schema = DocumentUpdateSchema(partial=True)
 
 
@@ -262,6 +268,23 @@ def add_share(doc_id: int):
     if err:
         return error(err, status_code=403 if err == "Forbidden" else 400)
     return success("Share created.", {"share": share_dict(sh)}, status_code=201)
+
+
+@documents_bp.patch("/<int:doc_id>/shares/<int:share_id>")
+@jwt_required()
+def patch_share(doc_id: int, share_id: int):
+    try:
+        body = _share_update_schema.load(request.get_json() or {}, partial=True)
+    except ValidationError as err:
+        return error("Validation failed.", errors=err.messages, status_code=422)
+    if not body:
+        return error("No fields to update.", status_code=400)
+    sh, err = _docs.update_share(current_user, doc_id, share_id, body)
+    if err == "Not found":
+        return error(err, status_code=404)
+    if err:
+        return error(err, status_code=403 if err == "Forbidden" else 400)
+    return success("Share updated.", {"share": share_dict(sh)})
 
 
 @documents_bp.delete("/<int:doc_id>/shares/<int:share_id>")

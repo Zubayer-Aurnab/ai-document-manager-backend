@@ -18,7 +18,7 @@ _verification = UserEmailVerificationService()
 
 @auth_bp.post("/verify-email")
 def verify_email():
-    """Public: complete email verification (admin-created users). Sends welcome email with credentials."""
+    """Public: legacy token flow — completes pending verification and sends welcome email with credentials."""
     try:
         data = _verify_schema.load(request.get_json() or {})
     except ValidationError as err:
@@ -37,11 +37,6 @@ def login():
         return error("Validation failed.", errors=err.messages, status_code=422)
     user = _auth.authenticate(data["email"], data["password"])
     if not user:
-        if _auth.login_unverified_only(data["email"], data["password"]):
-            return error(
-                "Please verify your email using the link we sent to your inbox before signing in.",
-                status_code=403,
-            )
         return error("Invalid credentials.", status_code=401)
     tokens = _auth.build_tokens(user)
     return success(

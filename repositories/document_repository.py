@@ -180,10 +180,15 @@ class DocumentRepository:
         conds = [DocumentShare.shared_with_user_id == user_id]
         if department_id is not None:
             conds.append(DocumentShare.shared_with_department_id == department_id)
+        now = datetime.now(timezone.utc)
+        share_active = or_(
+            DocumentShare.expires_at.is_(None),
+            DocumentShare.expires_at > now,
+        )
         q = (
             Document.query.options(joinedload(Document.owner))
             .join(DocumentShare, DocumentShare.document_id == Document.id)
-            .filter(Document.deleted_at.is_(None), or_(*conds))
+            .filter(Document.deleted_at.is_(None), or_(*conds), share_active)
         )
         q = self._apply_list_filters(q, **filters)
         q = q.distinct().order_by(Document.created_at.desc())
@@ -225,10 +230,16 @@ class DocumentRepository:
         share_parts = [DocumentShare.shared_with_user_id == user.id]
         if dept_id is not None:
             share_parts.append(DocumentShare.shared_with_department_id == dept_id)
+        now = datetime.now(timezone.utc)
+        share_active = or_(
+            DocumentShare.expires_at.is_(None),
+            DocumentShare.expires_at > now,
+        )
         share_subq = exists(
             select(DocumentShare.id).where(
                 DocumentShare.document_id == Document.id,
                 or_(*share_parts),
+                share_active,
             )
         )
         access = or_(Document.owner_id == user.id, share_subq)
@@ -261,10 +272,16 @@ class DocumentRepository:
         share_parts = [DocumentShare.shared_with_user_id == user.id]
         if dept_id is not None:
             share_parts.append(DocumentShare.shared_with_department_id == dept_id)
+        now = datetime.now(timezone.utc)
+        share_active = or_(
+            DocumentShare.expires_at.is_(None),
+            DocumentShare.expires_at > now,
+        )
         share_subq = exists(
             select(DocumentShare.id).where(
                 DocumentShare.document_id == Document.id,
                 or_(*share_parts),
+                share_active,
             )
         )
         access = or_(Document.owner_id == user.id, share_subq)
