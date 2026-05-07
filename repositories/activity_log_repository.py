@@ -1,4 +1,6 @@
 """Activity log persistence."""
+from sqlalchemy.orm import joinedload
+
 from extensions import db
 from models.activity_log import ActivityLog
 
@@ -10,7 +12,7 @@ class ActivityLogRepository:
         return log
 
     def list_recent(self, page: int, per_page: int, document_id: int | None = None):
-        q = ActivityLog.query.order_by(ActivityLog.created_at.desc())
+        q = ActivityLog.query.options(joinedload(ActivityLog.user)).order_by(ActivityLog.created_at.desc())
         if document_id is not None:
             q = q.filter(
                 ActivityLog.entity_type == "document",

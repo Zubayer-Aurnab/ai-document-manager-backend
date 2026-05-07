@@ -1,5 +1,6 @@
 """Entity to JSON-serializable dicts."""
 import hashlib
+from typing import Any
 
 from models.company_settings import CompanySettings
 from models.department import Department
@@ -147,13 +148,128 @@ def notification_dict(n: Notification) -> dict:
     }
 
 
-def activity_dict(a) -> dict:
+def _activity_action_label(action: str | None) -> str:
+    if not action:
+        return ""
+    parts = [p for p in action.replace(".", " ").split() if p]
+    return " ".join(p.replace("_", " ").strip().title() for p in parts)
+
+
+def _activity_actor_for_log(a) -> dict | None:
+    u = getattr(a, "user", None)
+    if u is None:
+        return None
+    return {
+        "id": u.id,
+        "full_name": u.full_name,
+        "email": u.email,
+        "avatar_url": gravatar_url(u.email),
+    }
+
+
+def batch_activity_lookups(logs: list) -> tuple[dict[int, str], dict[int, dict[str, str]]]:
+    """Batch-load document titles and user name/email when metadata omits them."""
+    from models.document import Document
+    from models.user import User
+
+    doc_ids: list[int] = []
+    user_ids: list[int] = []
+    for a in logs:
+        et = (a.entity_type or "").strip()
+        eid = a.entity_id
+        if not eid:
+            continue
+        meta = a.metadata_json if isinstance(a.metadata_json, dict) else {}
+        if et == "document" and not meta.get("title"):
+            doc_ids.append(eid)
+        elif et == "user" and not (meta.get("email") or meta.get("name")):
+            user_ids.append(eid)
+
+    titles: dict[int, str] = {}
+    if doc_ids:
+        uniq = list(dict.fromkeys(doc_ids))
+        rows = Document.query.filter(Document.id.in_(uniq)).with_entities(Document.id, Document.title).all()
+        titles = {r.id: r.title for r in rows}
+
+    users_m: dict[int, dict[str, str]] = {}
+    if user_ids:
+        uniq = list(dict.fromkeys(user_ids))
+        rows = User.query.filter(User.id.in_(uniq)).with_entities(User.id, User.full_name, User.email).all()
+        users_m = {r.id: {"full_name": r.full_name, "email": r.email} for r in rows}
+
+    return titles, users_m
+
+
+def _activity_entity_summary(
+    a,
+    *,
+    document_titles: dict[int, str] | None = None,
+    user_entities: dict[int, dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    meta = a.metadata_json if isinstance(a.metadata_json, dict) else {}
+    et = (a.entity_type or "").strip() or None
+    eid = a.entity_id
+    type_labels = {
+        "document": "Document",
+        "user": "User",
+        "department": "Department",
+        "company_settings": "Company settings",
+        "document_category": "Category",
+    }
+    type_label = type_labels.get(et or "", (et or "Unknown").replace("_", " ").title())
+    primary = meta.get("title") or meta.get("name") or meta.get("email")
+    if et == "document" and eid is not None and document_titles:
+        primary = primary or document_titles.get(eid)
+    if (
+        et == "user"
+        and eid is not None
+        and user_entities
+        and eid in user_entities
+        and not primary
+    ):
+        u = user_entities[eid]
+        primary = f"{u['full_name']} · {u['email']}"
+
+    extra: list[dict[str, Any]] = []
+    for k in sorted(meta.keys()):
+        if k in ("title", "name", "email"):
+            continue
+        v = meta.get(k)
+        if v is None or v == {}:
+            continue
+        extra.append({"key": str(k), "value": v})
+    headline = type_label
+    if eid is not None:
+        headline = f"{type_label} · #{eid}"
+    return {
+        "type": et,
+        "type_label": type_label,
+        "id": eid,
+        "headline": headline,
+        "primary": primary,
+        "extra": extra,
+    }
+
+
+def activity_dict(
+    a,
+    *,
+    document_titles: dict[int, str] | None = None,
+    user_entities: dict[int, dict[str, str]] | None = None,
+) -> dict:
     return {
         "id": a.id,
         "user_id": a.user_id,
         "action": a.action,
+        "action_label": _activity_action_label(a.action),
         "entity_type": a.entity_type,
         "entity_id": a.entity_id,
+        "entity": _activity_entity_summary(
+            a,
+            document_titles=document_titles,
+            user_entities=user_entities,
+        ),
+        "user": _activity_actor_for_log(a),
         "metadata": a.metadata_json,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }

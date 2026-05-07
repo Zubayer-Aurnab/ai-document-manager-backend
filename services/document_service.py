@@ -165,10 +165,14 @@ class DocumentService:
             desc = desc[:8000]
         tag_list = _normalize_tags(tags)
 
+        t = (title or "").strip()
+        if not t:
+            return None, "Title is required"
+
         document = Document(
             owner_id=actor.id,
             department_id=actor.department_id,
-            title=title.strip() or file.filename,
+            title=t,
             description=desc,
             tags=None,
             original_filename=file.filename,

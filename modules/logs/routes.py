@@ -6,7 +6,7 @@ from modules.logs import logs_bp
 from services.activity_log_service import ActivityLogService
 from utils.pagination import pagination_meta
 from utils.responses import error, success
-from utils.serialization import activity_dict
+from utils.serialization import activity_dict, batch_activity_lookups
 
 _service = ActivityLogService()
 
@@ -25,9 +25,10 @@ def list_logs():
     document_id = request.args.get("document_id", type=int)
     page, per_page = _page()
     paginated = _service.list_paginated(page, per_page, document_id=document_id)
+    dt, ue = batch_activity_lookups(paginated.items)
     return success(
         data={
-            "items": [activity_dict(a) for a in paginated.items],
+            "items": [activity_dict(a, document_titles=dt, user_entities=ue) for a in paginated.items],
             **pagination_meta(paginated),
         }
     )

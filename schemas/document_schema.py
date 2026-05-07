@@ -4,19 +4,19 @@ from marshmallow import Schema, ValidationError, fields, validate, validates_sch
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9-]{0,40}$")
+_UPLOAD_CATEGORY_SLUG_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 
 
 class DocumentUploadSchema(Schema):
-    title = fields.Str(required=False, allow_none=True, validate=validate.Length(max=300))
+    title = fields.Str(required=True, validate=validate.Length(min=1, max=300))
     description = fields.Str(required=False, allow_none=True, validate=validate.Length(max=8000))
     visibility = fields.Str(
-        load_default="department",
+        required=True,
         validate=validate.OneOf(["private", "department", "shared"]),
     )
     category_slug = fields.Str(
-        required=False,
-        allow_none=True,
-        validate=validate.And(validate.Length(max=40), validate.Regexp(_SLUG_RE)),
+        required=True,
+        validate=validate.And(validate.Length(min=1, max=40), validate.Regexp(_UPLOAD_CATEGORY_SLUG_RE)),
     )
 
 

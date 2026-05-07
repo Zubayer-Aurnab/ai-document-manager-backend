@@ -18,7 +18,7 @@ from repositories.document_share_repository import DocumentShareRepository
 from services.document_service import DocumentService
 from utils.pagination import pagination_meta
 from utils.responses import error, success
-from utils.serialization import activity_dict, document_dict, owner_summary_dict, share_dict
+from utils.serialization import activity_dict, batch_activity_lookups, document_dict, owner_summary_dict, share_dict
 
 _docs = DocumentService()
 _share_repo = DocumentShareRepository()
@@ -124,15 +124,15 @@ def upload_document():
     if "file" not in request.files:
         return error("Missing file field.", status_code=400)
     file = request.files["file"]
-    raw_title = request.form.get("title") or ""
-    visibility = request.form.get("visibility") or "department"
+    raw_title = (request.form.get("title") or "").strip()
+    visibility = (request.form.get("visibility") or "").strip() or "department"
     try:
         meta = _upload_schema.load(
             {
-                "title": raw_title or None,
+                "title": raw_title,
                 "description": request.form.get("description"),
                 "visibility": visibility,
-                "category_slug": (request.form.get("category_slug") or "").strip() or None,
+                "category_slug": (request.form.get("category_slug") or "").strip(),
             }
         )
     except ValidationError as err:
@@ -141,9 +141,9 @@ def upload_document():
     document, err = _docs.upload(
         current_user,
         file,
-        meta.get("title") or raw_title,
+        meta["title"],
         meta["visibility"],
-        meta.get("category_slug"),
+        meta["category_slug"],
         meta.get("description"),
         tags,
     )
@@ -365,9 +365,10 @@ def document_activity(doc_id: int):
         return error("Forbidden.", status_code=403)
     page, per_page = _page()
     paginated = _logs.list_paginated(page, per_page, document_id=doc_id)
+    dt, ue = batch_activity_lookups(paginated.items)
     return success(
         data={
-            "items": [activity_dict(a) for a in paginated.items],
+            "items": [activity_dict(a, document_titles=dt, user_entities=ue) for a in paginated.items],
             **pagination_meta(paginated),
         }
     )
