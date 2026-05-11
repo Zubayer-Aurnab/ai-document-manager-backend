@@ -267,3 +267,8 @@ class Config:
     GROQ_AI_SEARCH_CANDIDATE_LIMIT = int(os.environ.get("GROQ_AI_SEARCH_CANDIDATE_LIMIT", "40"))
     GROQ_TIMEOUT_SEC = int(os.environ.get("GROQ_TIMEOUT_SEC", "45"))
     AI_AUTO_TAG_MAX = int(os.environ.get("AI_AUTO_TAG_MAX", "12"))
+
+    # Cross-document workspace Q&A (AI Search page): context from top matching documents
+    AI_WORKSPACE_MAX_DOCUMENTS = int(os.environ.get("AI_WORKSPACE_MAX_DOCUMENTS", "6"))
+    AI_WORKSPACE_CHARS_PER_DOCUMENT = int(os.environ.get("AI_WORKSPACE_CHARS_PER_DOCUMENT", "14000"))
+    AI_WORKSPACE_MAX_CONTEXT_CHARS = int(os.environ.get("AI_WORKSPACE_MAX_CONTEXT_CHARS", "56000"))

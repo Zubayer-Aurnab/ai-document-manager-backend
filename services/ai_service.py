@@ -168,16 +168,14 @@ class AIService:
         self._docs.save(document)
         return kws
 
-    def search(self, user: User, query: str, page: int, per_page: int) -> dict[str, Any]:
+    def search_candidate_ids(self, user: User, query: str) -> tuple[list[int], bool, bool, int]:
+        """
+        Ordered document IDs the user may access for AI search / workspace Q&A (not paginated).
+        Returns (ids, ranked_by_ai, natural_language_search, candidate_limit).
+        """
         q = (query or "").strip()
         if len(q) < 2:
-            return {
-                "items": [],
-                **pagination_fields(total=0, page=page, per_page=per_page),
-                "ranked_by_ai": False,
-                "candidate_limit": 0,
-                "natural_language_search": False,
-            }
+            return [], False, False, 0
 
         cfg = current_app.config
         raw_limit = int(cfg.get("GROQ_AI_SEARCH_CANDIDATE_LIMIT", 40))
@@ -188,8 +186,6 @@ class AIService:
         if api_key:
             kw_cap = min(35, candidate_limit)
             keyword_ids = self._docs.search_authorized_ids(user, q, limit=kw_cap)
-            # Only add a recency pool when SQL has no substring hits — otherwise unrelated
-            # "recent" docs pollute NL ranking and the UI (merge used to re-append them too).
             if keyword_ids:
                 ordered_ids = keyword_ids[:candidate_limit]
             else:
@@ -201,13 +197,7 @@ class AIService:
         ranked_by_ai = False
 
         if total == 0:
-            return {
-                "items": [],
-                **pagination_fields(total=0, page=page, per_page=per_page),
-                "ranked_by_ai": False,
-                "candidate_limit": candidate_limit,
-                "natural_language_search": natural_language_search,
-            }
+            return [], False, natural_language_search, candidate_limit
 
         if api_key and total >= 2:
             candidates = self._groq_nl_candidate_payloads(ordered_ids, q)
@@ -223,7 +213,31 @@ class AIService:
             if ranked:
                 ordered_ids = self._merge_rank_order(ordered_ids, ranked)
                 ranked_by_ai = True
-                total = len(ordered_ids)
+
+        return ordered_ids, ranked_by_ai, natural_language_search, candidate_limit
+
+    def search(self, user: User, query: str, page: int, per_page: int) -> dict[str, Any]:
+        q = (query or "").strip()
+        if len(q) < 2:
+            return {
+                "items": [],
+                **pagination_fields(total=0, page=page, per_page=per_page),
+                "ranked_by_ai": False,
+                "candidate_limit": 0,
+                "natural_language_search": False,
+            }
+
+        ordered_ids, ranked_by_ai, natural_language_search, candidate_limit = self.search_candidate_ids(user, q)
+        total = len(ordered_ids)
+
+        if total == 0:
+            return {
+                "items": [],
+                **pagination_fields(total=0, page=page, per_page=per_page),
+                "ranked_by_ai": False,
+                "candidate_limit": candidate_limit,
+                "natural_language_search": natural_language_search,
+            }
 
         start = (page - 1) * per_page
         slice_ids = ordered_ids[start : start + per_page]
